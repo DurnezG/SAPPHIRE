@@ -120,7 +120,8 @@ void SAPPHIRE::Sapphire::ImGuiUI()
 
 	// ---- 2. Build layout once ----
 	static bool first_time = true;
-	if (first_time) {
+	if (first_time) 
+	{
 		first_time = false;
 
 		ImGui::DockBuilderRemoveNode(dockspace_id);  // clear existing
@@ -223,7 +224,7 @@ void SAPPHIRE::Sapphire::ShowHierarchy()
 
 	for (auto scene : scenes)
 	{
-		ImGui::TreeNodeEx(scene->GetName().c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
+		ImGui::Text(scene->GetName().c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
 		auto gos = scene->GetGameObjects();
 
 		for (auto go : gos)
