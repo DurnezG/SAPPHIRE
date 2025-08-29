@@ -1,20 +1,43 @@
 #include "Sapphire.h"
 
 #include <chrono>
+#include <functional>
 #include <string>
 #include <SDL3/SDL.h>
 
 #include "imgui.h"
 #include "implot.h"
+
+#include "misc/cpp/imgui_stdlib.h"
+#include "imgui_internal.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 
 #include "Emerald.h"
+#include <Core/SceneManager.h>
+#include <Core/Scene.h>
 
 SAPPHIRE::Sapphire::Sapphire()
 	: m_pEngine("SAPPHIRE", 1920, 1080)
 {
 	ImGuiSetup();
+
+
+	// DEBUG ONLY
+	auto& scene = EMERALD::SceneManager::GetInstance().CreateScene("Test level");
+
+	auto go = std::make_shared<EMERALD::GameObject>("New GameObject 1");
+	scene.Add(go);
+
+	go = std::make_shared<EMERALD::GameObject>("New GameObject 2");
+	scene.Add(go);
+	auto go2 = std::make_shared<EMERALD::GameObject>("New GameObject 3");
+	go2->SetParent(go.get(), false);
+	scene.Add(go2);
+	go2 = std::make_shared<EMERALD::GameObject>("New GameObject 4");
+	go2->SetParent(go.get(), false);
+	scene.Add(go2);
+
 }
 
 SAPPHIRE::Sapphire::~Sapphire()
@@ -38,36 +61,11 @@ void SAPPHIRE::Sapphire::Run()
 		m_pEngine.StartFrame(currentTime);
 		m_pEngine.Update();
 
-
 		ImGuiStartFrame();
-
-		if (ImGui::Begin("test"))
-		{
-			ImGui::Text("Hello World!");
-
-			// Plotting demo
-			static float xs[1000], ys[1000];
-			static bool initialized = false;
-
-			if (!initialized) {
-				for (int i = 0; i < 1000; ++i) {
-					xs[i] = i * 0.01f;
-					ys[i] = sinf(xs[i]);
-				}
-				initialized = true;
-			}
-
-			if (ImPlot::BeginPlot("Sine Wave"))
-			{
-				ImPlot::PlotLine("sin(x)", xs, ys, 1000);
-				ImPlot::EndPlot();
-			}
-		}
-		ImGui::End();
-
+		ImGuiUI();
 		ImGuiEndFrame();
-		m_pEngine.Render();
 
+		m_pEngine.Render();
 		m_pEngine.EndFrame(currentTime);
 	}
 }
@@ -82,7 +80,7 @@ void SAPPHIRE::Sapphire::ImGuiSetup()
 	ImPlot::CreateContext();
 
 	ImGuiIO& io = ImGui::GetIO();
-	(void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
 	SetupImGuiStyle();
 
@@ -95,6 +93,172 @@ void SAPPHIRE::Sapphire::ImGuiStartFrame()
 	ImGui_ImplSDLRenderer3_NewFrame();
 	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
+}
+
+void SAPPHIRE::Sapphire::ImGuiUI()
+{
+	// ---- 1. Host Window ----
+	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
+		ImGuiWindowFlags_NoNavFocus;
+
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->WorkPos);
+	ImGui::SetNextWindowSize(viewport->WorkSize);
+	ImGui::SetNextWindowViewport(viewport->ID);
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+	ImGui::Begin("DockSpaceHost", nullptr, window_flags);
+	ImGui::PopStyleVar(3);
+
+	ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
+	ImGui::DockSpace(dockspace_id, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
+
+	// ---- 2. Build layout once ----
+	static bool first_time = true;
+	if (first_time) {
+		first_time = false;
+
+		ImGui::DockBuilderRemoveNode(dockspace_id);  // clear existing
+		ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+		ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+		// Split: left, right, bottom
+		ImGuiID dock_main_id = dockspace_id;
+		ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
+		ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+		ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.25f, nullptr, &dock_main_id);
+		// dock_main_id is now the center (Scene)
+
+		// Assign windows
+		ImGui::DockBuilderDockWindow("Hierarchy", dock_id_left);
+		ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
+		ImGui::DockBuilderDockWindow("Console", dock_id_bottom);
+		ImGui::DockBuilderDockWindow("Assets", dock_id_bottom); // tabbed with Console
+		ImGui::DockBuilderDockWindow("Scene", dock_main_id);
+
+		ImGui::DockBuilderFinish(dockspace_id);
+	}
+
+	ImGui::End(); // End host window
+
+	// ---- 3. Actual Windows ----
+
+	ImGui::Begin("Hierarchy");
+	ShowHierarchy();
+	ImGui::End();
+
+	ImGui::Begin("Inspector");
+	ShowInspector();
+	ImGui::End();
+
+	ImGui::Begin("Assets");
+	ImGui::Text("Project Assets");
+	ImGui::Separator();
+	ImGui::BulletText("Materials");
+	ImGui::BulletText("Meshes");
+	ImGui::BulletText("Textures");
+	ImGui::BulletText("Scripts");
+	ImGui::End();
+
+	ImGui::Begin("Console");
+	ImGui::TextWrapped("[Info] Engine started...");
+	ImGui::TextWrapped("[Warning] Missing material on PlayerMesh");
+	ImGui::TextWrapped("[Error] Script not found!");
+	ImGui::End();
+
+	ImGui::Begin("Scene");
+	ImGui::Text("Scene View (renderer)");
+	ImGui::Separator();
+
+	// Example ImPlot content
+	static float xs[100], ys[100];
+	static bool init = false;
+	if (!init) {
+		for (int i = 0; i < 100; i++) {
+			xs[i] = i * 0.1f;
+			ys[i] = sinf(xs[i]);
+		}
+		init = true;
+	}
+	if (ImPlot::BeginPlot("ScenePlot")) {
+		ImPlot::PlotLine("sin(x)", xs, ys, 100);
+		ImPlot::EndPlot();
+	}
+
+	ImGui::End();
+}
+
+void SAPPHIRE::Sapphire::ShowHierarchy()
+{
+	auto& sceneManager = EMERALD::SceneManager::GetInstance();
+	auto scenes = sceneManager.GetScenes();
+
+	ImGui::Begin("Hierarchy");
+
+	// Recursive function to draw nodes
+	std::function<void(EMERALD::GameObject*)> DrawNode = [&](EMERALD::GameObject* obj)
+	{
+		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+		if (obj == m_SelectedObject)
+			flags |= ImGuiTreeNodeFlags_Selected;
+
+		bool opened = ImGui::TreeNodeEx(obj->GetName().c_str(), flags);
+		if (ImGui::IsItemClicked()) 
+		{
+			m_SelectedObject = obj; // select object
+		}
+
+		if (opened) 
+		{
+			for (auto* child : obj->GetChildren())
+				DrawNode(child);
+			ImGui::TreePop();
+		}
+	};
+
+	for (auto scene : scenes)
+	{
+		ImGui::TreeNodeEx(scene->GetName().c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
+		auto gos = scene->GetGameObjects();
+
+		for (auto go : gos)
+		{
+			if (go->GetParent() == nullptr)
+				DrawNode(go);
+		}
+	}
+
+	ImGui::End();
+}
+
+void SAPPHIRE::Sapphire::ShowInspector()
+{
+	ImGui::Begin("Inspector");
+
+	if (m_SelectedObject) 
+	{
+		std::string name = m_SelectedObject->GetName();
+		ImGui::Text("Selected: %s", name.c_str());
+		ImGui::Separator();
+
+		if (ImGui::InputText("Name", &name))
+{
+			m_SelectedObject->SetName(name);
+		}
+
+		// TODO: show components
+	}
+	else 
+	{
+		ImGui::Text("No object selected");
+	}
+
+	ImGui::End();
 }
 
 void SAPPHIRE::Sapphire::ImGuiEndFrame()

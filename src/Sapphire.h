@@ -1,6 +1,8 @@
 #pragma once
 #include <Emerald.h>
 
+#include <Core/GameObject.h>
+
 namespace SAPPHIRE
 {
 	class Sapphire
@@ -13,6 +15,11 @@ namespace SAPPHIRE
 
 		void ImGuiSetup();
 		void ImGuiStartFrame();
+
+		void ImGuiUI();
+		void ShowHierarchy();
+		void ShowInspector();
+
 		void ImGuiEndFrame();
 		void ImGuiDestory();
 
@@ -22,5 +29,7 @@ namespace SAPPHIRE
 		EMERALD::Emerald m_pEngine;
 
 		bool m_IsRunning;
+
+		EMERALD::GameObject* m_SelectedObject = nullptr;
 	};
 }
