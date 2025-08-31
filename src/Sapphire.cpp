@@ -16,6 +16,7 @@
 #include "Emerald.h"
 #include <Core/SceneManager.h>
 #include <Core/Scene.h>
+#include <Core/Console.h>
 
 SAPPHIRE::Sapphire::Sapphire()
 	: m_pEngine("SAPPHIRE", 1920, 1080)
@@ -24,19 +25,37 @@ SAPPHIRE::Sapphire::Sapphire()
 
 
 	// DEBUG ONLY
-	auto& scene = EMERALD::SceneManager::GetInstance().CreateScene("Test level");
+	{
+		auto& scene = EMERALD::SceneManager::GetInstance().CreateScene("Test level");
 
-	auto go = std::make_shared<EMERALD::GameObject>("New GameObject 1");
-	scene.Add(go);
+		auto go = std::make_shared<EMERALD::GameObject>("New GameObject 1");
+		scene.Add(go);
 
-	go = std::make_shared<EMERALD::GameObject>("New GameObject 2");
-	scene.Add(go);
-	auto go2 = std::make_shared<EMERALD::GameObject>("New GameObject 3");
-	go2->SetParent(go.get(), false);
-	scene.Add(go2);
-	go2 = std::make_shared<EMERALD::GameObject>("New GameObject 4");
-	go2->SetParent(go.get(), false);
-	scene.Add(go2);
+		go = std::make_shared<EMERALD::GameObject>("New GameObject 2");
+		scene.Add(go);
+		auto go2 = std::make_shared<EMERALD::GameObject>("New GameObject 3");
+		go2->SetParent(go.get(), false);
+		scene.Add(go2);
+		go2 = std::make_shared<EMERALD::GameObject>("New GameObject 4");
+		go2->SetParent(go.get(), false);
+		scene.Add(go2);
+
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().Log("Testing the log message.");
+		EMERALD::Console::GetInstance().LogWarning("Testing the log warning message.");
+		EMERALD::Console::GetInstance().LogError("Testing the log error message.");
+	}
 
 }
 
@@ -167,9 +186,7 @@ void SAPPHIRE::Sapphire::ImGuiUI()
 	ImGui::End();
 
 	ImGui::Begin("Console");
-	ImGui::TextWrapped("[Info] Engine started...");
-	ImGui::TextWrapped("[Warning] Missing material on PlayerMesh");
-	ImGui::TextWrapped("[Error] Script not found!");
+	ShowConsole();
 	ImGui::End();
 
 	ImGui::Begin("Scene");
@@ -260,6 +277,25 @@ void SAPPHIRE::Sapphire::ShowInspector()
 	}
 
 	ImGui::End();
+}
+
+void SAPPHIRE::Sapphire::ShowConsole()
+{
+	using namespace EMERALD;
+	auto& console = Console::GetInstance();
+
+	for (const auto& msg : console.GetMessages())
+	{
+		ImVec4 color;
+		switch (msg.level)
+		{
+		case LogLevel::Info:    color = ImVec4(1, 1, 1, 1); break; // white
+		case LogLevel::Warning: color = ImVec4(1, 1, 0, 1); break; // yellow
+		case LogLevel::Error:   color = ImVec4(1, 0, 0, 1); break; // red
+		}
+
+		ImGui::TextColored(color, "%s", msg.text.c_str());
+	}
 }
 
 void SAPPHIRE::Sapphire::ImGuiEndFrame()

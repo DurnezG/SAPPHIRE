@@ -17,8 +17,10 @@ namespace SAPPHIRE
 		void ImGuiStartFrame();
 
 		void ImGuiUI();
+
 		void ShowHierarchy();
 		void ShowInspector();
+		void ShowConsole();
 
 		void ImGuiEndFrame();
 		void ImGuiDestory();
