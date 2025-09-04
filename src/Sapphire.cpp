@@ -11,12 +11,13 @@
 #include "misc/cpp/imgui_stdlib.h"
 #include "imgui_internal.h"
 #include "backends/imgui_impl_sdl3.h"
-#include "backends/imgui_impl_sdlrenderer3.h"
+#include "backends/imgui_impl_vulkan.h"
 
 #include "Emerald.h"
 #include <Core/SceneManager.h>
 #include <Core/Scene.h>
 #include <Core/Console.h>
+
 
 SAPPHIRE::Sapphire::Sapphire()
 	: m_pEngine("SAPPHIRE", 1920, 1080)
@@ -80,11 +81,11 @@ void SAPPHIRE::Sapphire::Run()
 		m_pEngine.StartFrame(currentTime);
 		m_pEngine.Update();
 
+		m_pEngine.Render();
 		ImGuiStartFrame();
 		ImGuiUI();
 		ImGuiEndFrame();
 
-		m_pEngine.Render();
 		m_pEngine.EndFrame(currentTime);
 	}
 }
@@ -92,7 +93,6 @@ void SAPPHIRE::Sapphire::Run()
 void SAPPHIRE::Sapphire::ImGuiSetup()
 {
 	SDL_Window* window = m_pEngine.GetSDLWindow();
-	SDL_Renderer* renderer = m_pEngine.GetSDLRenderer();
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -103,13 +103,53 @@ void SAPPHIRE::Sapphire::ImGuiSetup()
 
 	SetupImGuiStyle();
 
-	ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
-	ImGui_ImplSDLRenderer3_Init(renderer);
+	ImGui_ImplSDL3_InitForVulkan(window);
+
+	// Create Vulkan descriptor pool for ImGui
+	VkDescriptorPoolSize pool_sizes[] =
+	{
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE },
+	};
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	pool_info.maxSets = 0;
+	for (VkDescriptorPoolSize& pool_size : pool_sizes)
+		pool_info.maxSets += pool_size.descriptorCount;
+	pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
+	pool_info.pPoolSizes = pool_sizes;
+	vkCreateDescriptorPool(
+		m_pEngine.GetRuby()->GetDevice().GetLogicalDevice(),
+		&pool_info,
+		nullptr,
+		&m_DescriptorPool
+	);
+
+	ImGui_ImplVulkan_InitInfo init_info{};
+	init_info.Instance = m_pEngine.GetRuby()->GetDevice().GetInstance()->GetInstance();
+	init_info.PhysicalDevice = m_pEngine.GetRuby()->GetDevice().GetPhysicalDevice();
+	init_info.Device = m_pEngine.GetRuby()->GetDevice().GetLogicalDevice();
+	init_info.Queue = m_pEngine.GetRuby()->GetDevice().GetGraphicsQueue();
+	init_info.DescriptorPool = m_DescriptorPool;
+	init_info.MinImageCount = RUBY::SwapChain::MAX_FRAMES_IN_FLIGHT;
+	init_info.ImageCount = static_cast<uint32_t>(m_pEngine.GetRuby()->GetSwapChain().GetImages().size());
+	init_info.UseDynamicRendering = true;
+
+	VkFormat swapchainFormat = m_pEngine.GetRuby()->GetSwapChain().GetImageFormat();
+	init_info.PipelineRenderingCreateInfo = {};
+	init_info.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+	init_info.PipelineRenderingCreateInfo.pNext = nullptr;
+	init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainFormat;
+	init_info.PipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+	init_info.PipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+	ImGui_ImplVulkan_Init(&init_info);
 }
 
 void SAPPHIRE::Sapphire::ImGuiStartFrame()
 {
-	ImGui_ImplSDLRenderer3_NewFrame();
+	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
 }
@@ -300,21 +340,14 @@ void SAPPHIRE::Sapphire::ShowConsole()
 
 void SAPPHIRE::Sapphire::ImGuiEndFrame()
 {
-	//SDL_Window* window = m_pEngine.GetSDLWindow();
-	SDL_Renderer* renderer = m_pEngine.GetSDLRenderer();
-
 	ImGui::Render();
 
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_RenderClear(renderer);
-
-	ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
-	SDL_RenderPresent(renderer);
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_pEngine.GetRuby()->GetCommandPool().GetCommandBuffers()[m_pEngine.GetRuby()->GetCurrentFrame()]);
 }
 
 void SAPPHIRE::Sapphire::ImGuiDestory()
 {
-	ImGui_ImplSDLRenderer3_Shutdown();
+	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplSDL3_Shutdown();
 	ImPlot::DestroyContext();
 	ImGui::DestroyContext();

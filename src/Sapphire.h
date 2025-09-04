@@ -32,6 +32,8 @@ namespace SAPPHIRE
 
 		bool m_IsRunning;
 
+		VkDescriptorPool m_DescriptorPool{ VK_NULL_HANDLE };
+
 		EMERALD::GameObject* m_SelectedObject = nullptr;
 	};
 }

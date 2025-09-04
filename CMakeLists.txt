@@ -9,6 +9,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(USE_LOCAL_EMERALD "Use local EMERALD instead of GitHub release" ON)
 
+find_package(Vulkan REQUIRED)
+
+FetchContent_Declare(
+    VMA
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG master  # or a specific tag/commit
+)
+FetchContent_MakeAvailable(VMA)
+
 # ---------------- SDL3 ----------------
 FetchContent_Declare(
     SDL3
@@ -55,7 +64,8 @@ set(IMGUI_SRC
     "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
     "${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp"
     "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
-    "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp"
+    "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
+
     "${imgui_SOURCE_DIR}/imgui_demo.cpp")
 
 set(IMPLOT_SRC
@@ -74,6 +84,7 @@ add_executable(${PROJECT_NAME}
 
 # ---------------- Linking ----------------
 target_link_libraries(${PROJECT_NAME} PUBLIC
+    Vulkan::Vulkan
     EMERALD
     SDL3::SDL3
 )
@@ -81,6 +92,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 target_include_directories(${PROJECT_NAME} PUBLIC 
     ${implot_SOURCE_DIR} 
     ${imgui_SOURCE_DIR}
+    ${vma_SOURCE_DIR}/include
 )
 
 if(TARGET EMERALD)
