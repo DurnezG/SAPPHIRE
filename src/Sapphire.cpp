@@ -81,10 +81,37 @@ void SAPPHIRE::Sapphire::Run()
 		m_pEngine.StartFrame(currentTime);
 		m_pEngine.Update();
 
-		m_pEngine.Render();
+
+
+		uint32_t imageIndex;
+		if (!m_pEngine.BeginFrameRender(imageIndex)) return;
+
+		VkCommandBuffer cmd = m_pEngine.GetRuby()->GetCommandPool().GetCommandBuffers()[m_pEngine.GetRuby()->GetCurrentFrame()];
+		vkResetCommandBuffer(cmd, 0);
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		vkBeginCommandBuffer(cmd, &beginInfo);
+
+		m_pEngine.GetRuby()->RecordPasses(cmd, imageIndex);
+
 		ImGuiStartFrame();
 		ImGuiUI();
 		ImGuiEndFrame();
+
+		RUBY::Image& img = m_pEngine.GetRuby()->GetSwapChain().GetImages()[m_pEngine.GetRuby()->GetCurrentFrame()];
+			img.TransitionImageLayout(
+			cmd, 
+				img.GetFormat(),
+				img.GetImageLayout(),
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 
+			VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 
+			VK_ACCESS_2_NONE, 
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 
+			VK_PIPELINE_STAGE_2_NONE);
+
+		vkEndCommandBuffer(cmd);
+		m_pEngine.EndFrameRender(imageIndex);
 
 		m_pEngine.EndFrame(currentTime);
 	}
@@ -105,6 +132,32 @@ void SAPPHIRE::Sapphire::ImGuiSetup()
 
 	ImGui_ImplSDL3_InitForVulkan(window);
 
+	CreateImGuiDescriptors();
+
+	ImGui_ImplVulkan_InitInfo init_info{};
+	init_info.Instance = m_pEngine.GetRuby()->GetDevice().GetInstance()->GetInstance();
+	init_info.PhysicalDevice = m_pEngine.GetRuby()->GetDevice().GetPhysicalDevice();
+	init_info.Device = m_pEngine.GetRuby()->GetDevice().GetLogicalDevice();
+	init_info.Queue = m_pEngine.GetRuby()->GetDevice().GetGraphicsQueue();
+	init_info.DescriptorPool = m_DescriptorPool;
+	init_info.MinImageCount = RUBY::SwapChain::MAX_FRAMES_IN_FLIGHT;
+	init_info.ImageCount = static_cast<uint32_t>(m_pEngine.GetRuby()->GetSwapChain().GetImages().size());
+	init_info.UseDynamicRendering = true;
+
+	VkFormat swapchainFormat = m_pEngine.GetRuby()->GetSwapChain().GetImageFormat();
+	init_info.PipelineRenderingCreateInfo = {};
+	init_info.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+	init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainFormat;
+
+	init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+	ImGui_ImplVulkan_Init(&init_info);
+	ImGui_ImplVulkan_CreateFontsTexture();
+}
+
+void SAPPHIRE::Sapphire::CreateImGuiDescriptors()
+{
 	// Create Vulkan descriptor pool for ImGui
 	VkDescriptorPoolSize pool_sizes[] =
 	{
@@ -124,27 +177,11 @@ void SAPPHIRE::Sapphire::ImGuiSetup()
 		nullptr,
 		&m_DescriptorPool
 	);
+}
 
-	ImGui_ImplVulkan_InitInfo init_info{};
-	init_info.Instance = m_pEngine.GetRuby()->GetDevice().GetInstance()->GetInstance();
-	init_info.PhysicalDevice = m_pEngine.GetRuby()->GetDevice().GetPhysicalDevice();
-	init_info.Device = m_pEngine.GetRuby()->GetDevice().GetLogicalDevice();
-	init_info.Queue = m_pEngine.GetRuby()->GetDevice().GetGraphicsQueue();
-	init_info.DescriptorPool = m_DescriptorPool;
-	init_info.MinImageCount = RUBY::SwapChain::MAX_FRAMES_IN_FLIGHT;
-	init_info.ImageCount = static_cast<uint32_t>(m_pEngine.GetRuby()->GetSwapChain().GetImages().size());
-	init_info.UseDynamicRendering = true;
-
-	VkFormat swapchainFormat = m_pEngine.GetRuby()->GetSwapChain().GetImageFormat();
-	init_info.PipelineRenderingCreateInfo = {};
-	init_info.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
-	init_info.PipelineRenderingCreateInfo.pNext = nullptr;
-	init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-	init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainFormat;
-	init_info.PipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-	init_info.PipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
-
-	ImGui_ImplVulkan_Init(&init_info);
+void SAPPHIRE::Sapphire::DestroyImguiDescriptors()
+{
+	vkDestroyDescriptorPool(m_pEngine.GetRuby()->GetDevice().GetLogicalDevice(), m_DescriptorPool, nullptr);
 }
 
 void SAPPHIRE::Sapphire::ImGuiStartFrame()
@@ -160,7 +197,7 @@ void SAPPHIRE::Sapphire::ImGuiUI()
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
 		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
-		ImGuiWindowFlags_NoNavFocus;
+		ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 	ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -347,6 +384,8 @@ void SAPPHIRE::Sapphire::ImGuiEndFrame()
 
 void SAPPHIRE::Sapphire::ImGuiDestory()
 {
+	DestroyImguiDescriptors();
+
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplSDL3_Shutdown();
 	ImPlot::DestroyContext();
@@ -442,4 +481,105 @@ void SAPPHIRE::Sapphire::SetupImGuiStyle()
 	style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(0.4980392158031464f, 0.5137255191802979f, 1.0f, 1.0f);
 	style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.196078434586525f, 0.1764705926179886f, 0.5450980663299561f, 0.501960813999176f);
 	style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.196078434586525f, 0.1764705926179886f, 0.5450980663299561f, 0.501960813999176f);
+}
+
+inline ImVec4 SRGBToLinear(const ImVec4& c)
+{
+	return ImVec4(
+		powf(c.x, 2.2f),
+		powf(c.y, 2.2f),
+		powf(c.z, 2.2f),
+		c.w // alpha stays linear
+	);
+}
+
+void SAPPHIRE::Sapphire::SetupImGuiStyleUNORM()
+{
+	// Comfortable Dark Cyan style by SouthCraftX from ImThemes
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	style.Alpha = 1.0f;
+	style.DisabledAlpha = 1.0f;
+	style.WindowPadding = ImVec2(20.0f, 20.0f);
+	style.WindowRounding = 11.5f;
+	style.WindowBorderSize = 0.0f;
+	style.WindowMinSize = ImVec2(20.0f, 20.0f);
+	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	style.WindowMenuButtonPosition = ImGuiDir_None;
+	style.ChildRounding = 20.0f;
+	style.ChildBorderSize = 1.0f;
+	style.PopupRounding = 17.39999961853027f;
+	style.PopupBorderSize = 1.0f;
+	style.FramePadding = ImVec2(20.0f, 3.400000095367432f);
+	style.FrameRounding = 11.89999961853027f;
+	style.FrameBorderSize = 0.0f;
+	style.ItemSpacing = ImVec2(8.899999618530273f, 13.39999961853027f);
+	style.ItemInnerSpacing = ImVec2(7.099999904632568f, 1.799999952316284f);
+	style.CellPadding = ImVec2(12.10000038146973f, 9.199999809265137f);
+	style.IndentSpacing = 0.0f;
+	style.ColumnsMinSpacing = 8.699999809265137f;
+	style.ScrollbarSize = 11.60000038146973f;
+	style.ScrollbarRounding = 15.89999961853027f;
+	style.GrabMinSize = 3.700000047683716f;
+	style.GrabRounding = 20.0f;
+	style.TabRounding = 9.800000190734863f;
+	style.TabBorderSize = 0.0f;
+	style.TabMinWidthForCloseButton = 0.0f;
+	style.ColorButtonPosition = ImGuiDir_Right;
+	style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+	style.SelectableTextAlign = ImVec2(0.0f, 0.0f);
+
+	style.Colors[ImGuiCol_Text] = SRGBToLinear(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+	style.Colors[ImGuiCol_TextDisabled] = SRGBToLinear(ImVec4(0.2745098f, 0.31764707f, 0.4509804f, 1.0f));
+	style.Colors[ImGuiCol_WindowBg] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_ChildBg] = SRGBToLinear(ImVec4(0.09411765f, 0.10196079f, 0.11764706f, 1.0f));
+	style.Colors[ImGuiCol_PopupBg] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_Border] = SRGBToLinear(ImVec4(0.15686275f, 0.16862746f, 0.19215687f, 1.0f));
+	style.Colors[ImGuiCol_BorderShadow] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_FrameBg] = SRGBToLinear(ImVec4(0.11372549f, 0.1254902f, 0.15294118f, 1.0f));
+	style.Colors[ImGuiCol_FrameBgHovered] = SRGBToLinear(ImVec4(0.15686275f, 0.16862746f, 0.19215687f, 1.0f));
+	style.Colors[ImGuiCol_FrameBgActive] = SRGBToLinear(ImVec4(0.15686275f, 0.16862746f, 0.19215687f, 1.0f));
+	style.Colors[ImGuiCol_TitleBg] = SRGBToLinear(ImVec4(0.04705882f, 0.05490196f, 0.07058824f, 1.0f));
+	style.Colors[ImGuiCol_TitleBgActive] = SRGBToLinear(ImVec4(0.04705882f, 0.05490196f, 0.07058824f, 1.0f));
+	style.Colors[ImGuiCol_TitleBgCollapsed] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_MenuBarBg] = SRGBToLinear(ImVec4(0.09803922f, 0.10588235f, 0.12156863f, 1.0f));
+	style.Colors[ImGuiCol_ScrollbarBg] = SRGBToLinear(ImVec4(0.04705882f, 0.05490196f, 0.07058824f, 1.0f));
+	style.Colors[ImGuiCol_ScrollbarGrab] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_ScrollbarGrabHovered] = SRGBToLinear(ImVec4(0.15686275f, 0.16862746f, 0.19215687f, 1.0f));
+	style.Colors[ImGuiCol_ScrollbarGrabActive] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_CheckMark] = SRGBToLinear(ImVec4(0.03137255f, 0.94901961f, 0.84313726f, 1.0f));
+	style.Colors[ImGuiCol_SliderGrab] = SRGBToLinear(ImVec4(0.03137255f, 0.94901961f, 0.84313726f, 1.0f));
+	style.Colors[ImGuiCol_SliderGrabActive] = SRGBToLinear(ImVec4(0.6f, 0.96470588f, 0.03137255f, 1.0f));
+	style.Colors[ImGuiCol_Button] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_ButtonHovered] = SRGBToLinear(ImVec4(0.18039216f, 0.1882353f, 0.19607843f, 1.0f));
+	style.Colors[ImGuiCol_ButtonActive] = SRGBToLinear(ImVec4(0.15294118f, 0.15294118f, 0.15294118f, 1.0f));
+	style.Colors[ImGuiCol_Header] = SRGBToLinear(ImVec4(0.14117648f, 0.16470589f, 0.20784314f, 1.0f));
+	style.Colors[ImGuiCol_HeaderHovered] = SRGBToLinear(ImVec4(0.10588235f, 0.10588235f, 0.10588235f, 1.0f));
+	style.Colors[ImGuiCol_HeaderActive] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_Separator] = SRGBToLinear(ImVec4(0.12941177f, 0.14901961f, 0.19215687f, 1.0f));
+	style.Colors[ImGuiCol_SeparatorHovered] = SRGBToLinear(ImVec4(0.15686275f, 0.18431373f, 0.25098041f, 1.0f));
+	style.Colors[ImGuiCol_SeparatorActive] = SRGBToLinear(ImVec4(0.15686275f, 0.18431373f, 0.25098041f, 1.0f));
+	style.Colors[ImGuiCol_ResizeGrip] = SRGBToLinear(ImVec4(0.14509804f, 0.14509804f, 0.14509804f, 1.0f));
+	style.Colors[ImGuiCol_ResizeGripHovered] = SRGBToLinear(ImVec4(0.03137255f, 0.94901961f, 0.84313726f, 1.0f));
+	style.Colors[ImGuiCol_ResizeGripActive] = SRGBToLinear(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+	style.Colors[ImGuiCol_Tab] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_TabHovered] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_TabActive] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_TabUnfocused] = SRGBToLinear(ImVec4(0.07843138f, 0.08627451f, 0.10196079f, 1.0f));
+	style.Colors[ImGuiCol_TabUnfocusedActive] = SRGBToLinear(ImVec4(0.1254902f, 0.27450982f, 0.57254905f, 1.0f));
+	style.Colors[ImGuiCol_PlotLines] = SRGBToLinear(ImVec4(0.52156866f, 0.6f, 0.7019608f, 1.0f));
+	style.Colors[ImGuiCol_PlotLinesHovered] = SRGBToLinear(ImVec4(0.03921569f, 0.98039216f, 0.98039216f, 1.0f));
+	style.Colors[ImGuiCol_PlotHistogram] = SRGBToLinear(ImVec4(0.03137255f, 0.94901961f, 0.84313726f, 1.0f));
+	style.Colors[ImGuiCol_PlotHistogramHovered] = SRGBToLinear(ImVec4(0.15686275f, 0.18431373f, 0.25098041f, 1.0f));
+	style.Colors[ImGuiCol_TableHeaderBg] = SRGBToLinear(ImVec4(0.04705882f, 0.05490196f, 0.07058824f, 1.0f));
+	style.Colors[ImGuiCol_TableBorderStrong] = SRGBToLinear(ImVec4(0.04705882f, 0.05490196f, 0.07058824f, 1.0f));
+	style.Colors[ImGuiCol_TableBorderLight] = SRGBToLinear(ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+	style.Colors[ImGuiCol_TableRowBg] = SRGBToLinear(ImVec4(0.11764706f, 0.13333334f, 0.14901961f, 1.0f));
+	style.Colors[ImGuiCol_TableRowBgAlt] = SRGBToLinear(ImVec4(0.09803922f, 0.10588235f, 0.12156863f, 1.0f));
+	style.Colors[ImGuiCol_TextSelectedBg] = SRGBToLinear(ImVec4(0.9372549f, 0.9372549f, 0.9372549f, 1.0f));
+	style.Colors[ImGuiCol_DragDropTarget] = SRGBToLinear(ImVec4(0.49803922f, 0.5137255f, 1.0f, 1.0f));
+	style.Colors[ImGuiCol_NavHighlight] = SRGBToLinear(ImVec4(0.26666668f, 0.2901961f, 1.0f, 1.0f));
+	style.Colors[ImGuiCol_NavWindowingHighlight] = SRGBToLinear(ImVec4(0.49803922f, 0.5137255f, 1.0f, 1.0f));
+	style.Colors[ImGuiCol_NavWindowingDimBg] = SRGBToLinear(ImVec4(0.19607843f, 0.1764706f, 0.54509807f, 0.5019608f));
+	style.Colors[ImGuiCol_ModalWindowDimBg] = SRGBToLinear(ImVec4(0.19607843f, 0.1764706f, 0.54509807f, 0.5019608f));
 }

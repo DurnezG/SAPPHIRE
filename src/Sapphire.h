@@ -12,9 +12,13 @@ namespace SAPPHIRE
 		~Sapphire();
 
 		void Run();
+	private:
 
 		void ImGuiSetup();
 		void ImGuiStartFrame();
+
+		void CreateImGuiDescriptors();
+		void DestroyImguiDescriptors();
 
 		void ImGuiUI();
 
@@ -25,8 +29,8 @@ namespace SAPPHIRE
 		void ImGuiEndFrame();
 		void ImGuiDestory();
 
-	private:
 		static void SetupImGuiStyle();
+		void SetupImGuiStyleUNORM();
 
 		EMERALD::Emerald m_pEngine;
 
