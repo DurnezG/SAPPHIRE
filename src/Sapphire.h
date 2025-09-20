@@ -3,6 +3,8 @@
 
 #include <Core/GameObject.h>
 
+struct ImFont;
+
 namespace SAPPHIRE
 {
 	class Sapphire
@@ -24,10 +26,13 @@ namespace SAPPHIRE
 
 		void ShowHierarchy();
 		void ShowInspector();
+		//void ShowAssets();
 		void ShowConsole();
 
 		void ImGuiEndFrame();
 		void ImGuiDestory();
+
+		void ResgisterUIInspectorElements();
 
 		static void SetupImGuiStyle();
 		void SetupImGuiStyleUNORM();
@@ -39,5 +44,9 @@ namespace SAPPHIRE
 		VkDescriptorPool m_DescriptorPool{ VK_NULL_HANDLE };
 
 		EMERALD::GameObject* m_SelectedObject = nullptr;
+
+
+		// TEXT
+		ImFont* m_DEFAULT_FONT{};
 	};
 }

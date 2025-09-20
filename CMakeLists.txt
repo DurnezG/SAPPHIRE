@@ -74,13 +74,15 @@ set(IMPLOT_SRC
 
 set(SRC_FILES
     "src/Sapphire.cpp"
- "src/main.cpp")
+ "src/main.cpp" "src/ComponentInspector.cpp")
 
 add_executable(${PROJECT_NAME} 
     ${SRC_FILES} 
     ${IMGUI_SRC} 
     ${IMPLOT_SRC}
 )
+
+add_dependencies(${PROJECT_NAME} CopyFonts)
 
 # ---------------- Linking ----------------
 target_link_libraries(${PROJECT_NAME} PUBLIC
@@ -96,7 +98,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 if(TARGET EMERALD)
-    get_target_property(EMERALD_INCLUDE_DIRS RUBY INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(EMERALD_INCLUDE_DIRS EMERALD INTERFACE_INCLUDE_DIRECTORIES)
     target_include_directories(${PROJECT_NAME} PUBLIC ${EMERALD_INCLUDE_DIRS})
 else()
     target_include_directories(${PROJECT_NAME} PUBLIC "${emerald_SOURCE_DIR}/include")
@@ -117,3 +119,13 @@ if (WIN32)
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
 endif()
+
+set(FONT_SRC_DIR "${CMAKE_SOURCE_DIR}/fonts")
+set(FONT_DST_DIR "${CMAKE_BINARY_DIR}/fonts")
+
+add_custom_target(CopyFonts ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${FONT_SRC_DIR}"
+            "${FONT_DST_DIR}"
+    COMMENT "Copying font assets to build directory..."
+)

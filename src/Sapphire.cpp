@@ -18,12 +18,14 @@
 #include <Core/Scene.h>
 #include <Core/Console.h>
 
+#include "ComponentInspector.h"
+
 
 SAPPHIRE::Sapphire::Sapphire()
 	: m_pEngine("SAPPHIRE", 1920, 1080)
 {
 	ImGuiSetup();
-
+	ResgisterUIInspectorElements();
 
 	// DEBUG ONLY
 	{
@@ -37,6 +39,11 @@ SAPPHIRE::Sapphire::Sapphire()
 		auto go2 = std::make_shared<EMERALD::GameObject>("New GameObject 3");
 		go2->SetParent(go.get(), false);
 		scene.Add(go2);
+
+		auto go3 = std::make_shared<EMERALD::GameObject>("New GameObject 5");
+		go3->SetParent(go2.get(), false);
+		scene.Add(go3);
+
 		go2 = std::make_shared<EMERALD::GameObject>("New GameObject 4");
 		go2->SetParent(go.get(), false);
 		scene.Add(go2);
@@ -126,6 +133,11 @@ void SAPPHIRE::Sapphire::ImGuiSetup()
 	ImPlot::CreateContext();
 
 	ImGuiIO& io = ImGui::GetIO();
+	m_DEFAULT_FONT = io.Fonts->AddFontFromFileTTF("fonts/Roboto/Roboto-Regular.ttf", 18.0f);
+
+	if (!m_DEFAULT_FONT)
+		std::cerr << "Failed to load font!" << std::endl;
+
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
 	SetupImGuiStyle();
@@ -193,6 +205,7 @@ void SAPPHIRE::Sapphire::ImGuiStartFrame()
 
 void SAPPHIRE::Sapphire::ImGuiUI()
 {
+	ImGui::PushFont(m_DEFAULT_FONT);
 	// ---- 1. Host Window ----
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
 		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
@@ -266,26 +279,26 @@ void SAPPHIRE::Sapphire::ImGuiUI()
 	ShowConsole();
 	ImGui::End();
 
-	ImGui::Begin("Scene");
-	ImGui::Text("Scene View (renderer)");
-	ImGui::Separator();
+	//ImGui::Begin("Scene");
+	////ImGui::Text("Scene View (renderer)");
+	////ImGui::Separator();
 
-	// Example ImPlot content
-	static float xs[100], ys[100];
-	static bool init = false;
-	if (!init) {
-		for (int i = 0; i < 100; i++) {
-			xs[i] = i * 0.1f;
-			ys[i] = sinf(xs[i]);
-		}
-		init = true;
-	}
-	if (ImPlot::BeginPlot("ScenePlot")) {
-		ImPlot::PlotLine("sin(x)", xs, ys, 100);
-		ImPlot::EndPlot();
-	}
-
-	ImGui::End();
+	////// Example ImPlot content
+	////static float xs[100], ys[100];
+	////static bool init = false;
+	////if (!init) {
+	////	for (int i = 0; i < 100; i++) {
+	////		xs[i] = i * 0.1f;
+	////		ys[i] = sinf(xs[i]);
+	////	}
+	////	init = true;
+	////}
+	////if (ImPlot::BeginPlot("ScenePlot")) {
+	////	ImPlot::PlotLine("sin(x)", xs, ys, 100);
+	////	ImPlot::EndPlot();
+	////}
+	//ImGui::End();
+	ImGui::PopFont();
 }
 
 void SAPPHIRE::Sapphire::ShowHierarchy()
@@ -295,20 +308,36 @@ void SAPPHIRE::Sapphire::ShowHierarchy()
 
 	ImGui::Begin("Hierarchy");
 
-	// Recursive function to draw nodes
+	ImGuiStyle& style = ImGui::GetStyle();
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 4.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 2.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 18.0f);
+
 	std::function<void(EMERALD::GameObject*)> DrawNode = [&](EMERALD::GameObject* obj)
 	{
 		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+
 		if (obj == m_SelectedObject)
 			flags |= ImGuiTreeNodeFlags_Selected;
 
+		if (obj->GetChildren().empty())
+			flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
 		bool opened = ImGui::TreeNodeEx(obj->GetName().c_str(), flags);
-		if (ImGui::IsItemClicked()) 
+
+		if (ImGui::IsItemClicked())
+			m_SelectedObject = obj;
+
+		// Right-click context menu
+		if (ImGui::BeginPopupContextItem())
 		{
-			m_SelectedObject = obj; // select object
+			if (ImGui::MenuItem("Rename")) { /* TODO */ }
+			if (ImGui::MenuItem("Delete")) { /* TODO */ }
+			if (ImGui::MenuItem("Add Child")) { /* TODO */ }
+			ImGui::EndPopup();
 		}
 
-		if (opened) 
+		if (opened && !obj->GetChildren().empty())
 		{
 			for (auto* child : obj->GetChildren())
 				DrawNode(child);
@@ -318,16 +347,33 @@ void SAPPHIRE::Sapphire::ShowHierarchy()
 
 	for (auto scene : scenes)
 	{
-		ImGui::Text(scene->GetName().c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
-		auto gos = scene->GetGameObjects();
+		ImGuiTreeNodeFlags sceneFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-		for (auto go : gos)
+		std::string sceneLabel = "[Level] " + scene->GetName();
+
+		bool sceneOpened = ImGui::TreeNodeEx(sceneLabel.c_str(), sceneFlags);
+
+		ImVec2 min = ImGui::GetItemRectMin();
+		ImVec2 max = ImGui::GetItemRectMax();
+		ImU32 bgColor = IM_COL32(55, 65, 85, 180);
+		ImGui::GetWindowDrawList()->AddRectFilled(min, max, bgColor);
+
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+		ImGui::PopStyleColor();
+
+		if (sceneOpened)
 		{
-			if (go->GetParent() == nullptr)
-				DrawNode(go);
+			auto gos = scene->GetGameObjects();
+			for (auto go : gos)
+			{
+				if (go->GetParent() == nullptr)
+					DrawNode(go);
+			}
+			ImGui::TreePop();
 		}
 	}
 
+	ImGui::PopStyleVar(3);
 	ImGui::End();
 }
 
@@ -346,7 +392,10 @@ void SAPPHIRE::Sapphire::ShowInspector()
 			m_SelectedObject->SetName(name);
 		}
 
-		// TODO: show components
+		for (auto* comp : m_SelectedObject->GetComponents())
+		{
+			ComponentInspector::DrawComponent(comp);
+		}
 	}
 	else 
 	{
@@ -355,6 +404,11 @@ void SAPPHIRE::Sapphire::ShowInspector()
 
 	ImGui::End();
 }
+//
+//void SAPPHIRE::Sapphire::ShowAssets()
+//{
+//
+//}
 
 void SAPPHIRE::Sapphire::ShowConsole()
 {
@@ -390,6 +444,39 @@ void SAPPHIRE::Sapphire::ImGuiDestory()
 	ImGui_ImplSDL3_Shutdown();
 	ImPlot::DestroyContext();
 	ImGui::DestroyContext();
+}
+
+void SAPPHIRE::Sapphire::ResgisterUIInspectorElements()
+{
+	ComponentInspector::Register(
+		EMERALD::Transform::StaticTypeID(),
+		EMERALD::Transform::StaticTypeName(),
+		[](EMERALD::ComponentBase* base) {
+			auto* transform = static_cast<EMERALD::Transform*>(base);
+			ImGui::DragFloat3("Position", &transform->LocalPosition().x, 0.1f);
+			ImGui::DragFloat3("Rotation", &transform->LocalRotation().x, 0.1f);
+			ImGui::DragFloat3("Scale", &transform->LocalScale().x, 0.1f);
+		});
+
+	// or
+	//SAPPHIRE::ComponentInspector::Register(
+	//	EMERALD::Transform::StaticTypeID(),
+	//	EMERALD::Transform::StaticTypeName(),
+	//[](EMERALD::ComponentBase* base) {
+	//	auto* transform = static_cast<EMERALD::Transform*>(base);
+
+	//	glm::vec3 pos = transform->GetLocalPosition();
+	//	if (ImGui::DragFloat3("Position", &pos.x, 0.1f))
+	//		transform->SetLocalPosition(pos);
+
+	//	glm::vec3 rot = transform->GetLocalRotation();
+	//	if (ImGui::DragFloat3("Rotation", &rot.x, 0.1f))
+	//		transform->SetLocalRotation(rot);
+
+	//	glm::vec3 scale = transform->GetLocalScale();
+	//	if (ImGui::DragFloat3("Scale", &scale.x, 0.1f))
+	//		transform->SetLocalScale(scale);
+	//	});
 }
 
 void SAPPHIRE::Sapphire::SetupImGuiStyle()
